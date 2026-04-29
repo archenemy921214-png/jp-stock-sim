@@ -4,8 +4,6 @@ import { getDb, parseReasons } from '@/lib/db'
 import { calculateBuySignal } from '@/lib/signals'
 import type { PriceHistory, Indicator } from '@/types'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
-
 export async function GET(request: Request) {
   const secret = request.headers.get('authorization')?.replace('Bearer ', '')
   if (secret !== process.env.CRON_SECRET) {
@@ -73,6 +71,7 @@ export async function GET(request: Request) {
     <p style="color: #94a3b8; font-size: 12px;">JP株シミュレーター より</p>
   `
 
+  const resend = new Resend(process.env.RESEND_API_KEY)
   const { error } = await resend.emails.send({
     from: 'JP株シミュレーター <onboarding@resend.dev>',
     to: toEmail,

@@ -4,7 +4,6 @@ import { Resend } from 'resend'
 import { getDb, parseReasons } from '@/lib/db'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-const resend = new Resend(process.env.RESEND_API_KEY)
 
 type Decision = {
   code: string
@@ -240,6 +239,7 @@ ${signalReasons.length > 0 ? signalReasons.map(r => `- ${r}`).join('\n') : '- �
     sells.length > 0 ? `売り${sells.length}` : '',
   ].filter(Boolean).join(' / ') + `銘柄 — ${dateLabel}`
 
+  const resend = new Resend(process.env.RESEND_API_KEY)
   const { error } = await resend.emails.send({
     from: 'JP株シミュレーター <onboarding@resend.dev>',
     to: toEmail,
