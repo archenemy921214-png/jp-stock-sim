@@ -6,7 +6,8 @@ export async function DELETE(
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params
-  const db = getDb()
-  db.prepare('DELETE FROM stocks WHERE code = ?').run(code)
+  const sb = getDb()
+  const { error } = await sb.from('stocks').delete().eq('code', code)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
 }

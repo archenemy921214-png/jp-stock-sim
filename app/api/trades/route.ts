@@ -1,25 +1,19 @@
 import { NextResponse } from 'next/server'
-import { getDb, parseReasons } from '@/lib/db'
+import { getDb } from '@/lib/db'
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
   const code = searchParams.get('code')
-  const db = getDb()
+  const sb = getDb()
 
-  const trades = (code
-    ? db.prepare(`
-        SELECT t.*, s.name as stock_name
-        FROM simulated_trades t JOIN stocks s ON s.code = t.stock_code
-        WHERE t.stock_code = ? ORDER BY t.exit_date DESC
-      `).all(code)
-    : db.prepare(`
-        SELECT t.*, s.name as stock_name
-        FROM simulated_trades t JOIN stocks s ON s.code = t.stock_code
-        ORDER BY t.exit_date DESC
-      `).all()
-  ) as any[]
+  let query = sb
+    .from('simulated_trades')
+    .select('*, stocks(name)')
+    .order('exit_date', { ascending: false })
 
-  return NextResponse.json(
-    trades.map(t => ({ ...t, signal_reasons: parseReasons(t.signal_reasons) }))
-  )
+  if (code) query = query.eq('stock_code', code)
+
+  const { data: trades, error } = await query
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json(trades ?? [])
 }

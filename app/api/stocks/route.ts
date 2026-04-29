@@ -8,8 +8,12 @@ const masterMap: Record<string, string> = Object.fromEntries(
 )
 
 export async function GET() {
-  const db = getDb()
-  const stocks = db.prepare('SELECT * FROM stocks ORDER BY created_at DESC').all()
+  const sb = getDb()
+  const { data: stocks, error } = await sb
+    .from('stocks')
+    .select('*')
+    .order('created_at', { ascending: false })
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(stocks)
 }
 
@@ -18,26 +22,25 @@ export async function POST(request: Request) {
   if (!code) return NextResponse.json({ error: '銘柄コードを入力してください' }, { status: 400 })
 
   const ticker = `${code}.T`
-
   try {
     const quote = await yf.quote(ticker, {}, { validateResult: false })
     const name = masterMap[String(code)] || (quote as any).longName || (quote as any).shortName || code
 
-    const db = getDb()
-    try {
-      db.prepare('INSERT INTO stocks (code, name, exchange) VALUES (?, ?, ?)').run(String(code), name, 'TSE')
-      const stock = db.prepare('SELECT * FROM stocks WHERE code = ?').get(String(code))
-      return NextResponse.json(stock)
-    } catch (e: any) {
-      if (e.message?.includes('UNIQUE constraint failed')) {
+    const sb = getDb()
+    const { data, error } = await sb
+      .from('stocks')
+      .insert({ code: String(code), name, exchange: 'TSE' })
+      .select()
+      .single()
+
+    if (error) {
+      if (error.code === '23505') {
         return NextResponse.json({ error: 'この銘柄はすでに登録されています' }, { status: 409 })
       }
-      throw e
+      return NextResponse.json({ error: error.message }, { status: 500 })
     }
+    return NextResponse.json(data)
   } catch (e: any) {
-    return NextResponse.json(
-      { error: `銘柄が見つかりません: ${e.message}` },
-      { status: 404 }
-    )
+    return NextResponse.json({ error: `銘柄が見つかりません: ${e.message}` }, { status: 404 })
   }
 }

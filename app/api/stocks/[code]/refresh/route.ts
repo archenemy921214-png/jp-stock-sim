@@ -42,32 +42,18 @@ export async function POST(
         high: Number(h.high),
         low: Number(h.low),
         close: Number(h.close),
-        volume: Number(h.volume)
+        volume: Number(h.volume),
       }))
 
-    const db = getDb()
+    const sb = getDb()
 
-    const upsertPrice = db.prepare(`
-      INSERT INTO price_history (stock_code, date, open, high, low, close, volume)
-      VALUES (@stock_code, @date, @open, @high, @low, @close, @volume)
-      ON CONFLICT(stock_code, date) DO UPDATE SET
-        open = excluded.open, high = excluded.high, low = excluded.low,
-        close = excluded.close, volume = excluded.volume
-    `)
-    db.transaction((rows: any[]) => { for (const r of rows) upsertPrice.run(r) })(priceRows)
+    await sb.from('price_history').upsert(priceRows, { onConflict: 'stock_code,date' })
 
     const priceHistory: PriceHistory[] = priceRows.map((p: any, i: number) => ({ id: i, ...p }))
     const indicatorsRaw = calculateIndicators(priceHistory)
     const indicatorRows = indicatorsRaw.map(ind => ({ stock_code: code, ...ind }))
 
-    const upsertIndicator = db.prepare(`
-      INSERT INTO indicators (stock_code, date, ma5, ma25, ma75, vol5avg, high20)
-      VALUES (@stock_code, @date, @ma5, @ma25, @ma75, @vol5avg, @high20)
-      ON CONFLICT(stock_code, date) DO UPDATE SET
-        ma5 = excluded.ma5, ma25 = excluded.ma25, ma75 = excluded.ma75,
-        vol5avg = excluded.vol5avg, high20 = excluded.high20
-    `)
-    db.transaction((rows: any[]) => { for (const r of rows) upsertIndicator.run(r) })(indicatorRows)
+    await sb.from('indicators').upsert(indicatorRows, { onConflict: 'stock_code,date' })
 
     const sorted = [...priceHistory].sort((a, b) => a.date.localeCompare(b.date))
     const sortedInd: Indicator[] = indicatorRows
@@ -83,83 +69,63 @@ export async function POST(
           date: sorted[i].date,
           signal_type: 'buy',
           score: buy.score,
-          reasons: JSON.stringify(buy.reasons)
+          reasons: buy.reasons,
         })
       }
     }
 
     if (signalRows.length > 0) {
-      const upsertSignal = db.prepare(`
-        INSERT INTO signals (stock_code, date, signal_type, score, reasons)
-        VALUES (@stock_code, @date, @signal_type, @score, @reasons)
-        ON CONFLICT(stock_code, date, signal_type) DO UPDATE SET
-          score = excluded.score, reasons = excluded.reasons
-      `)
-      db.transaction((rows: any[]) => { for (const r of rows) upsertSignal.run(r) })(signalRows)
+      await sb.from('signals').upsert(signalRows, { onConflict: 'stock_code,date,signal_type' })
     }
 
     const { trades, openPosition } = runSimulation(priceHistory, sortedInd)
 
-    db.prepare('DELETE FROM simulated_trades WHERE stock_code = ?').run(code)
-    db.prepare('DELETE FROM simulated_positions WHERE stock_code = ?').run(code)
+    await sb.from('simulated_trades').delete().eq('stock_code', code)
+    await sb.from('simulated_positions').delete().eq('stock_code', code)
 
-    const insertPos = db.prepare(`
-      INSERT INTO simulated_positions
-        (stock_code, entry_date, entry_price, quantity, status, signal_score, signal_reasons)
-      VALUES (@stock_code, @entry_date, @entry_price, @quantity, @status, @signal_score, @signal_reasons)
-    `)
-    const insertTrade = db.prepare(`
-      INSERT INTO simulated_trades
-        (position_id, stock_code, entry_date, entry_price, exit_date, exit_price,
-         quantity, pnl, exit_reason, signal_score, signal_reasons)
-      VALUES (@position_id, @stock_code, @entry_date, @entry_price, @exit_date, @exit_price,
-              @quantity, @pnl, @exit_reason, @signal_score, @signal_reasons)
-    `)
+    for (const trade of trades) {
+      const { data: posData } = await sb.from('simulated_positions').insert({
+        stock_code: code,
+        entry_date: trade.entryDate,
+        entry_price: trade.entryPrice,
+        quantity: trade.quantity,
+        status: 'closed',
+        signal_score: trade.signalScore,
+        signal_reasons: trade.signalReasons,
+      }).select('id').single()
 
-    db.transaction(() => {
-      for (const trade of trades) {
-        const r = insertPos.run({
-          stock_code: code,
-          entry_date: trade.entryDate,
-          entry_price: trade.entryPrice,
-          quantity: trade.quantity,
-          status: 'closed',
-          signal_score: trade.signalScore,
-          signal_reasons: JSON.stringify(trade.signalReasons)
-        })
-        insertTrade.run({
-          position_id: r.lastInsertRowid,
-          stock_code: code,
-          entry_date: trade.entryDate,
-          entry_price: trade.entryPrice,
-          exit_date: trade.exitDate,
-          exit_price: trade.exitPrice,
-          quantity: trade.quantity,
-          pnl: trade.pnl,
-          exit_reason: trade.exitReason,
-          signal_score: trade.signalScore,
-          signal_reasons: JSON.stringify(trade.signalReasons)
-        })
-      }
+      await sb.from('simulated_trades').insert({
+        position_id: posData?.id ?? null,
+        stock_code: code,
+        entry_date: trade.entryDate,
+        entry_price: trade.entryPrice,
+        exit_date: trade.exitDate,
+        exit_price: trade.exitPrice,
+        quantity: trade.quantity,
+        pnl: trade.pnl,
+        exit_reason: trade.exitReason,
+        signal_score: trade.signalScore,
+        signal_reasons: trade.signalReasons,
+      })
+    }
 
-      if (openPosition) {
-        insertPos.run({
-          stock_code: code,
-          entry_date: openPosition.entryDate,
-          entry_price: openPosition.entryPrice,
-          quantity: openPosition.quantity,
-          status: 'open',
-          signal_score: openPosition.signalScore,
-          signal_reasons: JSON.stringify(openPosition.signalReasons)
-        })
-      }
-    })()
+    if (openPosition) {
+      await sb.from('simulated_positions').insert({
+        stock_code: code,
+        entry_date: openPosition.entryDate,
+        entry_price: openPosition.entryPrice,
+        quantity: openPosition.quantity,
+        status: 'open',
+        signal_score: openPosition.signalScore,
+        signal_reasons: openPosition.signalReasons,
+      })
+    }
 
     return NextResponse.json({
       success: true,
       priceCount: priceRows.length,
       tradeCount: trades.length,
-      hasOpenPosition: !!openPosition
+      hasOpenPosition: !!openPosition,
     })
   } catch (e: any) {
     console.error('[refresh]', code, e)

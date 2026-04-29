@@ -6,14 +6,10 @@ import { getDb, parseReasons } from '@/lib/db'
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 type Decision = {
-  code: string
-  name: string
+  code: string; name: string
   decision: 'buy' | 'sell'
-  confidence: number
-  quantity: number
-  reasoning: string
-  price: number
-  executed: boolean
+  confidence: number; quantity: number
+  reasoning: string; price: number; executed: boolean
 }
 
 export async function GET(request: Request) {
@@ -21,60 +17,47 @@ export async function GET(request: Request) {
   if (secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-
   if (!process.env.ANTHROPIC_API_KEY) {
     return NextResponse.json({ error: 'ANTHROPIC_API_KEY が設定されていません' }, { status: 500 })
   }
 
-  const db = getDb()
-  const stocks = db.prepare('SELECT * FROM stocks').all() as { code: string; name: string }[]
+  const sb = getDb()
+  const { data: stocks } = await sb.from('stocks').select('*')
+  if (!stocks || stocks.length === 0) return NextResponse.json({ message: '銘柄なし' })
 
-  if (stocks.length === 0) {
-    return NextResponse.json({ message: '銘柄なし' })
-  }
-
-  const settings = db.prepare('SELECT * FROM notification_settings WHERE id = 1').get() as
-    | { email: string; enabled: number } | undefined
-
-  if (!settings?.enabled) {
-    return NextResponse.json({ message: '通知が無効です' })
-  }
+  const { data: settings } = await sb.from('notification_settings').select('*').eq('id', 1).single()
+  if (!settings?.enabled) return NextResponse.json({ message: '通知が無効です' })
 
   const toEmail = settings.email || process.env.NOTIFY_EMAIL
-  if (!toEmail) {
-    return NextResponse.json({ error: '通知先メールが設定されていません' }, { status: 500 })
-  }
+  if (!toEmail) return NextResponse.json({ error: '通知先メールが設定されていません' }, { status: 500 })
 
   const decisions: Decision[] = []
   const today = new Date().toISOString().split('T')[0]
 
   for (const stock of stocks) {
     try {
-      const prices = db.prepare(
-        'SELECT * FROM price_history WHERE stock_code = ? ORDER BY date DESC LIMIT 30'
-      ).all(stock.code) as any[]
+      const [pricesRes, latestIndRes, latestSignalRes, portfolioRes, openPosRes] = await Promise.all([
+        sb.from('price_history').select('*').eq('stock_code', stock.code).order('date', { ascending: false }).limit(30),
+        sb.from('indicators').select('*').eq('stock_code', stock.code).order('date', { ascending: false }).limit(1).single(),
+        sb.from('signals').select('*').eq('stock_code', stock.code).eq('signal_type', 'buy').order('date', { ascending: false }).limit(1).single(),
+        sb.from('claude_portfolio').select('*').eq('id', 1).single(),
+        sb.from('claude_positions').select('*').eq('stock_code', stock.code).eq('status', 'open').limit(1).single(),
+      ])
 
-      const latestInd = db.prepare(
-        'SELECT * FROM indicators WHERE stock_code = ? ORDER BY date DESC LIMIT 1'
-      ).get(stock.code) as any
-
-      const latestSignal = db.prepare(
-        "SELECT * FROM signals WHERE stock_code = ? AND signal_type = 'buy' ORDER BY date DESC LIMIT 1"
-      ).get(stock.code) as any
-
+      const prices = pricesRes.data ?? []
       if (prices.length < 5) continue
 
-      const portfolio = db.prepare('SELECT * FROM claude_portfolio WHERE id = 1').get() as any
-      const openPos = db.prepare(
-        "SELECT * FROM claude_positions WHERE stock_code = ? AND status = 'open' LIMIT 1"
-      ).get(stock.code) as any
+      const latestInd = latestIndRes.data
+      const latestSignal = latestSignalRes.data
+      const portfolio = portfolioRes.data
+      const openPos = openPosRes.data
 
-      const cash = portfolio?.cash ?? 1000000
-      const latestPrice = prices[0]?.close ?? 0
+      const cash = Number(portfolio?.cash ?? 1000000)
+      const latestPrice = prices[0] ? Number(prices[0].close) : 0
       if (latestPrice === 0) continue
 
       const priceTable = [...prices].reverse()
-        .map(p => `${p.date}: 終値¥${p.close.toLocaleString()} 出来高${p.volume.toLocaleString()}`)
+        .map(p => `${p.date}: 終値¥${Number(p.close).toLocaleString()} 出来高${Number(p.volume).toLocaleString()}`)
         .join('\n')
 
       const signalReasons = latestSignal ? parseReasons(latestSignal.reasons) : []
@@ -93,11 +76,11 @@ export async function GET(request: Request) {
 ${priceTable}
 
 【テクニカル指標（最新）】
-5日移動平均: ${latestInd?.ma5 ? `¥${Math.round(latestInd.ma5).toLocaleString()}` : 'N/A'}
-25日移動平均: ${latestInd?.ma25 ? `¥${Math.round(latestInd.ma25).toLocaleString()}` : 'N/A'}
-75日移動平均: ${latestInd?.ma75 ? `¥${Math.round(latestInd.ma75).toLocaleString()}` : 'N/A'}
-5日出来高平均: ${latestInd?.vol5avg ? Math.round(latestInd.vol5avg).toLocaleString() : 'N/A'}
-直近20日高値: ${latestInd?.high20 ? `¥${Math.round(latestInd.high20).toLocaleString()}` : 'N/A'}
+5日移動平均: ${latestInd?.ma5 ? `¥${Math.round(Number(latestInd.ma5)).toLocaleString()}` : 'N/A'}
+25日移動平均: ${latestInd?.ma25 ? `¥${Math.round(Number(latestInd.ma25)).toLocaleString()}` : 'N/A'}
+75日移動平均: ${latestInd?.ma75 ? `¥${Math.round(Number(latestInd.ma75)).toLocaleString()}` : 'N/A'}
+5日出来高平均: ${latestInd?.vol5avg ? Math.round(Number(latestInd.vol5avg)).toLocaleString() : 'N/A'}
+直近20日高値: ${latestInd?.high20 ? `¥${Math.round(Number(latestInd.high20)).toLocaleString()}` : 'N/A'}
 
 【ルールベースシグナル】
 スコア: ${latestSignal?.score ?? 0}/100点（80点以上が買いシグナル）
@@ -106,7 +89,7 @@ ${signalReasons.length > 0 ? signalReasons.map(r => `- ${r}`).join('\n') : '- �
 
 【現在のポートフォリオ状況】
 保有現金: ¥${cash.toLocaleString()}
-この銘柄の保有: ${openPos ? `${openPos.quantity}株（取得価格¥${openPos.entry_price.toLocaleString()}、含み損益: ${((latestPrice - openPos.entry_price) / openPos.entry_price * 100).toFixed(2)}%）` : 'なし'}
+この銘柄の保有: ${openPos ? `${openPos.quantity}株（取得価格¥${Number(openPos.entry_price).toLocaleString()}、含み損益: ${((latestPrice - Number(openPos.entry_price)) / Number(openPos.entry_price) * 100).toFixed(2)}%）` : 'なし'}
 
 【取引ルール】
 - 最小売買単位: 100株
@@ -129,12 +112,8 @@ ${signalReasons.length > 0 ? signalReasons.map(r => `- ${r}`).join('\n') : '- �
       if (!jsonMatch) continue
 
       const result = JSON.parse(jsonMatch[0]) as {
-        decision: 'buy' | 'sell' | 'hold'
-        confidence: number
-        quantity: number
-        reasoning: string
+        decision: 'buy' | 'sell' | 'hold'; confidence: number; quantity: number; reasoning: string
       }
-
       if (result.decision === 'hold') continue
 
       let executed = false
@@ -142,54 +121,44 @@ ${signalReasons.length > 0 ? signalReasons.map(r => `- ${r}`).join('\n') : '- �
       if (result.decision === 'buy' && result.quantity > 0 && !openPos) {
         const cost = latestPrice * result.quantity
         if (cash >= cost) {
-          db.transaction(() => {
-            db.prepare(
-              'INSERT INTO claude_positions (stock_code, stock_name, entry_date, entry_price, quantity, claude_reasoning) VALUES (?, ?, ?, ?, ?, ?)'
-            ).run(stock.code, stock.name, today, latestPrice, result.quantity, result.reasoning)
-
-            db.prepare(
-              'INSERT INTO claude_trades (stock_code, stock_name, trade_type, date, price, quantity, amount, cash_before, cash_after, claude_reasoning) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-            ).run(stock.code, stock.name, 'buy', today, latestPrice, result.quantity, -cost, cash, cash - cost, result.reasoning)
-
-            db.prepare(
-              "UPDATE claude_portfolio SET cash = ?, updated_at = datetime('now') WHERE id = 1"
-            ).run(cash - cost)
-          })()
+          await sb.from('claude_positions').insert({
+            stock_code: stock.code, stock_name: stock.name,
+            entry_date: today, entry_price: latestPrice,
+            quantity: result.quantity, claude_reasoning: result.reasoning,
+          })
+          await sb.from('claude_trades').insert({
+            stock_code: stock.code, stock_name: stock.name, trade_type: 'buy',
+            date: today, price: latestPrice, quantity: result.quantity,
+            amount: -cost, cash_before: cash, cash_after: cash - cost,
+            claude_reasoning: result.reasoning,
+          })
+          await sb.from('claude_portfolio').update({ cash: cash - cost }).eq('id', 1)
           executed = true
         }
       } else if (result.decision === 'sell' && openPos) {
         const proceeds = latestPrice * openPos.quantity
-        const pnl = (latestPrice - openPos.entry_price) * openPos.quantity
-
-        db.transaction(() => {
-          db.prepare("UPDATE claude_positions SET status = 'closed' WHERE id = ?").run(openPos.id)
-
-          db.prepare(
-            'INSERT INTO claude_trades (stock_code, stock_name, trade_type, date, price, quantity, amount, cash_before, cash_after, pnl, claude_reasoning) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-          ).run(stock.code, stock.name, 'sell', today, latestPrice, openPos.quantity, proceeds, cash, cash + proceeds, pnl, result.reasoning)
-
-          db.prepare(
-            "UPDATE claude_portfolio SET cash = ?, updated_at = datetime('now') WHERE id = 1"
-          ).run(cash + proceeds)
-        })()
+        const pnl = (latestPrice - Number(openPos.entry_price)) * openPos.quantity
+        await sb.from('claude_positions').update({ status: 'closed' }).eq('id', openPos.id)
+        await sb.from('claude_trades').insert({
+          stock_code: stock.code, stock_name: stock.name, trade_type: 'sell',
+          date: today, price: latestPrice, quantity: openPos.quantity,
+          amount: proceeds, cash_before: cash, cash_after: cash + proceeds, pnl,
+          claude_reasoning: result.reasoning,
+        })
+        await sb.from('claude_portfolio').update({ cash: cash + proceeds }).eq('id', 1)
         executed = true
       }
 
       if (executed || result.confidence >= 60) {
         decisions.push({
-          code: stock.code,
-          name: stock.name,
+          code: stock.code, name: stock.name,
           decision: result.decision as 'buy' | 'sell',
-          confidence: result.confidence,
-          quantity: result.quantity,
-          reasoning: result.reasoning,
-          price: latestPrice,
-          executed,
+          confidence: result.confidence, quantity: result.quantity,
+          reasoning: result.reasoning, price: latestPrice, executed,
         })
       }
     } catch (e) {
       console.error(`[claude-signals] ${stock.code}`, e)
-      continue
     }
   }
 
@@ -203,58 +172,38 @@ ${signalReasons.length > 0 ? signalReasons.map(r => `- ${r}`).join('\n') : '- �
 
   const html = `
     <h2>🤖 Claude AI 投資判断通知 — ${dateLabel}</h2>
-    <p>Claude が以下の投資判断を行いました。</p>
-
     ${buys.length > 0 ? `
       <h3 style="color:#22c55e;">📈 買い判断 (${buys.length}銘柄)</h3>
-      ${buys.map(d => `
-        <div style="margin:12px 0;padding:12px;border:1px solid #22c55e;border-radius:8px;">
-          <strong>${d.name}（${d.code}）</strong>
-          <span style="margin-left:8px;color:#94a3b8;">¥${d.price.toLocaleString()} × ${d.quantity}株</span>
-          <span style="margin-left:8px;color:#22c55e;">確信度 ${d.confidence}%</span>
-          ${d.executed ? '<span style="margin-left:8px;color:#6366f1;font-size:12px;">✓ 注文執行済み</span>' : ''}
-          <p style="margin:8px 0 0;color:#475569;font-size:14px;">${d.reasoning}</p>
-        </div>
-      `).join('')}
+      ${buys.map(d => `<div style="margin:12px 0;padding:12px;border:1px solid #22c55e;border-radius:8px;">
+        <strong>${d.name}（${d.code}）</strong>
+        <span style="margin-left:8px;color:#94a3b8;">¥${d.price.toLocaleString()} × ${d.quantity}株</span>
+        <span style="margin-left:8px;color:#22c55e;">確信度 ${d.confidence}%</span>
+        ${d.executed ? '<span style="margin-left:8px;font-size:12px;color:#6366f1;">✓ 執行済み</span>' : ''}
+        <p style="margin:8px 0 0;color:#475569;font-size:14px;">${d.reasoning}</p>
+      </div>`).join('')}
     ` : ''}
-
     ${sells.length > 0 ? `
       <h3 style="color:#ef4444;">📉 売り判断 (${sells.length}銘柄)</h3>
-      ${sells.map(d => `
-        <div style="margin:12px 0;padding:12px;border:1px solid #ef4444;border-radius:8px;">
-          <strong>${d.name}（${d.code}）</strong>
-          <span style="margin-left:8px;color:#94a3b8;">¥${d.price.toLocaleString()} × ${d.quantity}株</span>
-          <span style="margin-left:8px;color:#ef4444;">確信度 ${d.confidence}%</span>
-          ${d.executed ? '<span style="margin-left:8px;color:#6366f1;font-size:12px;">✓ 注文執行済み</span>' : ''}
-          <p style="margin:8px 0 0;color:#475569;font-size:14px;">${d.reasoning}</p>
-        </div>
-      `).join('')}
+      ${sells.map(d => `<div style="margin:12px 0;padding:12px;border:1px solid #ef4444;border-radius:8px;">
+        <strong>${d.name}（${d.code}）</strong>
+        <span style="margin-left:8px;color:#94a3b8;">¥${d.price.toLocaleString()} × ${d.quantity}株</span>
+        <span style="margin-left:8px;color:#ef4444;">確信度 ${d.confidence}%</span>
+        ${d.executed ? '<span style="margin-left:8px;font-size:12px;color:#6366f1;">✓ 執行済み</span>' : ''}
+        <p style="margin:8px 0 0;color:#475569;font-size:14px;">${d.reasoning}</p>
+      </div>`).join('')}
     ` : ''}
-
     <p style="color:#94a3b8;font-size:12px;margin-top:24px;">JP株シミュレーター — Claude AI より</p>
   `
 
-  const subject = [
-    buys.length > 0 ? `買い${buys.length}` : '',
-    sells.length > 0 ? `売り${sells.length}` : '',
-  ].filter(Boolean).join(' / ') + `銘柄 — ${dateLabel}`
-
+  const subject = [buys.length > 0 ? `買い${buys.length}` : '', sells.length > 0 ? `売り${sells.length}` : ''].filter(Boolean).join(' / ')
   const resend = new Resend(process.env.RESEND_API_KEY)
   const { error } = await resend.emails.send({
     from: 'JP株シミュレーター <onboarding@resend.dev>',
     to: toEmail,
-    subject: `🤖 Claude判断: ${subject}`,
+    subject: `🤖 Claude判断: ${subject}銘柄 — ${dateLabel}`,
     html,
   })
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
-  }
-
-  return NextResponse.json({
-    sent: true,
-    buys: buys.length,
-    sells: sells.length,
-    checked: stocks.length,
-  })
+  return NextResponse.json({ sent: true, buys: buys.length, sells: sells.length, checked: stocks.length })
 }
