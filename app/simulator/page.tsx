@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import StockCodeInput from '@/components/StockCodeInput'
 import type { BacktestParams, BacktestResult, BacktestTrade } from '@/lib/backtester'
 import { runBacktest } from '@/lib/backtester'
@@ -99,8 +99,9 @@ export default function SimulatorPage() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
 
-  const set = <K extends keyof BacktestParams>(key: K, value: BacktestParams[K]) =>
+  const set = useCallback(<K extends keyof BacktestParams>(key: K, value: BacktestParams[K]) => {
     setParams(prev => ({ ...prev, [key]: value }))
+  }, [])
 
   function validate(): string {
     if (!params.stockCode.trim()) return '銘柄コードを入力してください'
@@ -116,12 +117,14 @@ export default function SimulatorPage() {
     if (msg) { setError(msg); return }
     setError('')
     setRunning(true)
-    // Defer to next tick to let UI update before heavy computation
+    setResult(null)
     setTimeout(() => {
       try {
         const prices = generateDummyPrices(params.stockCode, params.period, params.longMaPeriod)
         const res = runBacktest(params, prices)
         setResult(res)
+      } catch (e: any) {
+        setError(e?.message ?? 'シミュレーション中にエラーが発生しました')
       } finally {
         setRunning(false)
       }

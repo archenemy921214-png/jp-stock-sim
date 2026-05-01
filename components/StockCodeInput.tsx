@@ -14,8 +14,10 @@ export default function StockCodeInput({ value, onChange, className }: Props) {
   const [open, setOpen] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  // onChangeを常に最新に保つ ref — useEffect の依存リストに入れない
+  const onChangeRef = useRef(onChange)
+  useEffect(() => { onChangeRef.current = onChange }, [onChange])
 
-  // 外クリックでドロップダウンを閉じる
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -26,13 +28,14 @@ export default function StockCodeInput({ value, onChange, className }: Props) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  // query だけを依存にする（onChange は ref 経由で使う）
   useEffect(() => {
     const isCode = /^\d{1,4}$/.test(query)
 
     if (!query || isCode) {
       setResults([])
       setOpen(false)
-      if (/^\d{4}$/.test(query)) onChange(query)
+      if (/^\d{4}$/.test(query)) onChangeRef.current(query)
       return
     }
 
@@ -40,6 +43,7 @@ export default function StockCodeInput({ value, onChange, className }: Props) {
     debounceRef.current = setTimeout(async () => {
       try {
         const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`)
+        if (!res.ok) { setResults([]); setOpen(false); return }
         const data = await res.json()
         const list = Array.isArray(data) ? data : []
         setResults(list)
@@ -49,11 +53,11 @@ export default function StockCodeInput({ value, onChange, className }: Props) {
         setOpen(false)
       }
     }, 300)
-  }, [query, onChange])
+  }, [query]) // onChange は依存リストに入れない
 
   const select = (code: string, name: string) => {
     setQuery(`${code} ${name}`)
-    onChange(code)
+    onChangeRef.current(code)
     setOpen(false)
   }
 
