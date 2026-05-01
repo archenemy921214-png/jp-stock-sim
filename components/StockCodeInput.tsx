@@ -14,10 +14,11 @@ export default function StockCodeInput({ value, onChange, className }: Props) {
   const [open, setOpen] = useState(false)
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  // onChangeを常に最新に保つ ref — useEffect の依存リストに入れない
+  // onChangeは ref 経由で参照 — 直接 useEffect の deps に入れない
   const onChangeRef = useRef(onChange)
-  useEffect(() => { onChangeRef.current = onChange }, [onChange])
+  onChangeRef.current = onChange // レンダーごとに更新（useEffect 不要）
 
+  // 外クリックでドロップダウンを閉じる（一度だけ登録）
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -28,21 +29,31 @@ export default function StockCodeInput({ value, onChange, className }: Props) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
-  // query だけを依存にする（onChange は ref 経由で使う）
-  useEffect(() => {
-    const isCode = /^\d{1,4}$/.test(query)
+  // ユーザー入力ハンドラー — onChange は useEffect からではなくここから直接呼ぶ
+  const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value
+    setQuery(val)
 
-    if (!query || isCode) {
+    // 4桁コード → 即座に親へ通知して終了
+    if (/^\d{4}$/.test(val)) {
+      onChangeRef.current(val)
       setResults([])
       setOpen(false)
-      if (/^\d{4}$/.test(query)) onChangeRef.current(query)
       return
     }
 
+    // 空 or 1〜3桁数字 → リセット
+    if (!val || /^\d{1,3}$/.test(val)) {
+      setResults([])
+      setOpen(false)
+      return
+    }
+
+    // テキスト → デバウンス検索
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(query)}`)
+        const res = await fetch(`/api/stocks/search?q=${encodeURIComponent(val)}`)
         if (!res.ok) { setResults([]); setOpen(false); return }
         const data = await res.json()
         const list = Array.isArray(data) ? data : []
@@ -53,7 +64,7 @@ export default function StockCodeInput({ value, onChange, className }: Props) {
         setOpen(false)
       }
     }, 300)
-  }, [query]) // onChange は依存リストに入れない
+  }
 
   const select = (code: string, name: string) => {
     setQuery(`${code} ${name}`)
@@ -66,7 +77,7 @@ export default function StockCodeInput({ value, onChange, className }: Props) {
       <input
         type="text"
         value={query}
-        onChange={e => setQuery(e.target.value)}
+        onChange={handleInput}
         onFocus={() => results.length > 0 && setOpen(true)}
         placeholder="例: 7203 / トヨタ"
         className={className}

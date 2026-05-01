@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import StockCodeInput from '@/components/StockCodeInput'
 import type { BacktestParams, BacktestResult, BacktestTrade } from '@/lib/backtester'
 import { runBacktest } from '@/lib/backtester'
@@ -99,8 +99,16 @@ export default function SimulatorPage() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState('')
 
-  const set = useCallback(<K extends keyof BacktestParams>(key: K, value: BacktestParams[K]) => {
-    setParams(prev => ({ ...prev, [key]: value }))
+  // 最新の params を ref で保持 — setTimeout 内から読むため
+  const paramsRef = useRef(params)
+  paramsRef.current = params
+
+  const set = <K extends keyof BacktestParams>(key: K, val: BacktestParams[K]) =>
+    setParams(prev => ({ ...prev, [key]: val }))
+
+  // StockCodeInput に渡す onChange を安定参照にする
+  const handleCodeChange = useCallback((code: string) => {
+    setParams(prev => ({ ...prev, stockCode: code }))
   }, [])
 
   function validate(): string {
@@ -118,10 +126,12 @@ export default function SimulatorPage() {
     setError('')
     setRunning(true)
     setResult(null)
+    // paramsRef を使って setTimeout 内でも最新の params を参照
+    const p = paramsRef.current
     setTimeout(() => {
       try {
-        const prices = generateDummyPrices(params.stockCode, params.period, params.longMaPeriod)
-        const res = runBacktest(params, prices)
+        const prices = generateDummyPrices(p.stockCode, p.period, p.longMaPeriod)
+        const res = runBacktest(p, prices)
         setResult(res)
       } catch (e: any) {
         setError(e?.message ?? 'シミュレーション中にエラーが発生しました')
@@ -149,7 +159,7 @@ export default function SimulatorPage() {
             <label className="block text-slate-400 text-xs mb-1">銘柄コード / 銘柄名</label>
             <StockCodeInput
               value={params.stockCode}
-              onChange={v => set('stockCode', v)}
+              onChange={handleCodeChange}
               className="w-full bg-slate-700 border border-slate-600 text-white text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
