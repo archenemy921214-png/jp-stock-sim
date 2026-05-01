@@ -8,21 +8,26 @@ const masterMap: Record<string, string> = Object.fromEntries(
 )
 
 export async function GET() {
-  const sb = getDb()
-  const { data: stocks, error } = await sb
-    .from('stocks')
-    .select('*')
-    .order('created_at', { ascending: false })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(stocks)
+  try {
+    const sb = getDb()
+    const { data: stocks, error } = await sb
+      .from('stocks')
+      .select('*')
+      .order('created_at', { ascending: false })
+    if (error) throw error
+    return NextResponse.json(stocks ?? [])
+  } catch (e: any) {
+    console.error('[GET /api/stocks]', e)
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
 }
 
 export async function POST(request: Request) {
-  const { code } = await request.json()
-  if (!code) return NextResponse.json({ error: '銘柄コードを入力してください' }, { status: 400 })
-
-  const ticker = `${code}.T`
   try {
+    const { code } = await request.json()
+    if (!code) return NextResponse.json({ error: '銘柄コードを入力してください' }, { status: 400 })
+
+    const ticker = `${code}.T`
     const quote = await yf.quote(ticker, {}, { validateResult: false })
     const name = masterMap[String(code)] || (quote as any).longName || (quote as any).shortName || code
 
@@ -37,10 +42,11 @@ export async function POST(request: Request) {
       if (error.code === '23505') {
         return NextResponse.json({ error: 'この銘柄はすでに登録されています' }, { status: 409 })
       }
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      throw error
     }
     return NextResponse.json(data)
   } catch (e: any) {
-    return NextResponse.json({ error: `銘柄が見つかりません: ${e.message}` }, { status: 404 })
+    console.error('[POST /api/stocks]', e)
+    return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
