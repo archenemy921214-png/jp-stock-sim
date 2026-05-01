@@ -7,16 +7,24 @@ export async function GET(request: Request) {
     const code = searchParams.get('code')
     const sb = getDb()
 
-    let query = sb
-      .from('simulated_trades')
-      .select('*, stocks(name)')
-      .order('exit_date', { ascending: false })
+    // JOIN不要：個別クエリ＋メモリ結合
+    const [tradesRes, stocksRes] = await Promise.all([
+      code
+        ? sb.from('simulated_trades').select('*').eq('stock_code', code).order('exit_date', { ascending: false })
+        : sb.from('simulated_trades').select('*').order('exit_date', { ascending: false }),
+      sb.from('stocks').select('code, name'),
+    ])
 
-    if (code) query = query.eq('stock_code', code)
+    if (tradesRes.error) throw tradesRes.error
+    if (stocksRes.error) throw stocksRes.error
 
-    const { data: trades, error } = await query
-    if (error) throw error
-    return NextResponse.json(trades ?? [])
+    const stockMap = Object.fromEntries((stocksRes.data ?? []).map(s => [s.code, s.name]))
+    const trades = (tradesRes.data ?? []).map(t => ({
+      ...t,
+      stocks: { name: stockMap[t.stock_code] ?? t.stock_code },
+    }))
+
+    return NextResponse.json(trades)
   } catch (e: any) {
     console.error('[GET /api/trades]', e)
     return NextResponse.json({ error: e.message }, { status: 500 })

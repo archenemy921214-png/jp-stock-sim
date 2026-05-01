@@ -5,13 +5,20 @@ export async function GET() {
   try {
     const sb = getDb()
 
-    const { data: list, error } = await sb
-      .from('simulated_trades')
-      .select('*, stocks(name)')
-      .order('exit_date', { ascending: true })
+    // JOIN不要：個別クエリ＋メモリ結合
+    const [tradesRes, stocksRes] = await Promise.all([
+      sb.from('simulated_trades').select('*').order('exit_date', { ascending: true }),
+      sb.from('stocks').select('code, name'),
+    ])
 
-    if (error) throw error
-    const trades = list ?? []
+    if (tradesRes.error) throw tradesRes.error
+    if (stocksRes.error) throw stocksRes.error
+
+    const stockMap = Object.fromEntries((stocksRes.data ?? []).map(s => [s.code, s.name]))
+    const trades = (tradesRes.data ?? []).map(t => ({
+      ...t,
+      stockName: stockMap[t.stock_code] ?? t.stock_code,
+    }))
 
     const totalPnl = trades.reduce((s, t) => s + Number(t.pnl), 0)
     const wins = trades.filter(t => Number(t.pnl) > 0)
@@ -27,16 +34,16 @@ export async function GET() {
     }
     const monthly = Object.entries(monthlyMap).sort().map(([month, pnl]) => ({ month, pnl }))
 
-    const stockMap: Record<string, { name: string; pnl: number; count: number; wins: number }> = {}
+    const stockPerfMap: Record<string, { name: string; pnl: number; count: number; wins: number }> = {}
     for (const t of trades) {
-      if (!stockMap[t.stock_code]) {
-        stockMap[t.stock_code] = { name: (t as any).stocks?.name || t.stock_code, pnl: 0, count: 0, wins: 0 }
+      if (!stockPerfMap[t.stock_code]) {
+        stockPerfMap[t.stock_code] = { name: t.stockName, pnl: 0, count: 0, wins: 0 }
       }
-      stockMap[t.stock_code].pnl += Number(t.pnl)
-      stockMap[t.stock_code].count++
-      if (Number(t.pnl) > 0) stockMap[t.stock_code].wins++
+      stockPerfMap[t.stock_code].pnl += Number(t.pnl)
+      stockPerfMap[t.stock_code].count++
+      if (Number(t.pnl) > 0) stockPerfMap[t.stock_code].wins++
     }
-    const byStock = Object.entries(stockMap)
+    const byStock = Object.entries(stockPerfMap)
       .map(([code, v]) => ({ code, ...v }))
       .sort((a, b) => b.pnl - a.pnl)
 

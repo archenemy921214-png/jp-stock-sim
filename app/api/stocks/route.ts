@@ -17,8 +17,11 @@ export async function GET() {
     if (error) throw error
     return NextResponse.json(stocks ?? [])
   } catch (e: any) {
-    console.error('[GET /api/stocks]', e)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    console.error('[GET /api/stocks] error:', e?.message, e?.code, e?.details)
+    return NextResponse.json(
+      { error: e?.message ?? 'Unknown error', code: e?.code, details: e?.details },
+      { status: 500 }
+    )
   }
 }
 
@@ -46,7 +49,10 @@ export async function POST(request: Request) {
     }
     return NextResponse.json(data)
   } catch (e: any) {
-    console.error('[POST /api/stocks]', e)
-    return NextResponse.json({ error: e.message }, { status: 500 })
+    console.error('[POST /api/stocks] error:', e?.message, e?.code)
+    return NextResponse.json(
+      { error: e?.message ?? 'Unknown error', code: e?.code },
+      { status: 500 }
+    )
   }
 }
