@@ -1,4 +1,5 @@
-import { getSupabaseAdmin } from './supabase'
+// サーバー側（API Route）専用 - service_role key 使用
+import { getSupabaseAdmin } from './supabase/admin'
 
 export function getDb() {
   return getSupabaseAdmin()
