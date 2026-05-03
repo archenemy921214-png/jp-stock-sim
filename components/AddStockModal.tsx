@@ -46,14 +46,14 @@ export default function AddStockModal({ onClose, onAdded }: Props) {
     }, 400)
   }, [query])
 
-  const handleSubmit = async (stockCode: string) => {
+  const handleSubmit = async (stockCode: string, stockName?: string) => {
     setLoading(true)
     setError('')
     try {
       const addRes = await fetch('/api/stocks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: stockCode })
+        body: JSON.stringify({ code: stockCode, name: stockName })
       })
       const addData = await addRes.json()
       if (!addRes.ok) throw new Error(addData.error)
@@ -118,7 +118,7 @@ export default function AddStockModal({ onClose, onAdded }: Props) {
               {results.map(r => (
                 <button
                   key={r.code}
-                  onClick={() => handleSubmit(r.code)}
+                  onClick={() => handleSubmit(r.code, r.name)}
                   disabled={loading}
                   className="w-full flex items-center gap-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-lg px-3 py-2 text-sm transition-colors text-left"
                 >
@@ -136,7 +136,7 @@ export default function AddStockModal({ onClose, onAdded }: Props) {
                 {POPULAR_STOCKS.map(s => (
                   <button
                     key={s.code}
-                    onClick={() => handleSubmit(s.code)}
+                    onClick={() => handleSubmit(s.code, s.name)}
                     disabled={loading}
                     className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-lg px-3 py-2 text-sm transition-colors text-left"
                   >

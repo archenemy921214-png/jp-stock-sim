@@ -15,7 +15,11 @@ export async function GET() {
       .select('*')
       .order('created_at', { ascending: false })
     if (error) throw error
-    return NextResponse.json(stocks ?? [])
+    const result = (stocks ?? []).map((s: any) => ({
+      ...s,
+      name: masterMap[String(s.code)] || s.name,
+    }))
+    return NextResponse.json(result)
   } catch (e: any) {
     console.error('[GET /api/stocks] error:', e?.message, e?.code, e?.details)
     return NextResponse.json(
@@ -25,16 +29,26 @@ export async function GET() {
   }
 }
 
+const MAX_STOCKS = 9
+
 export async function POST(request: Request) {
   try {
-    const { code } = await request.json()
+    const { code, name: providedName } = await request.json()
     if (!code) return NextResponse.json({ error: '銘柄コードを入力してください' }, { status: 400 })
 
-    const ticker = `${code}.T`
-    const quote = await yf.quote(ticker, {}, { validateResult: false })
-    const name = masterMap[String(code)] || (quote as any).longName || (quote as any).shortName || code
-
     const sb = getDb()
+    const { count } = await sb.from('stocks').select('*', { count: 'exact', head: true })
+    if ((count ?? 0) >= MAX_STOCKS) {
+      return NextResponse.json({ error: `銘柄は最大${MAX_STOCKS}個までです` }, { status: 400 })
+    }
+
+    let name = masterMap[String(code)] || providedName
+    if (!name) {
+      const ticker = `${code}.T`
+      const quote = await yf.quote(ticker, {}, { validateResult: false })
+      name = (quote as any).longName || (quote as any).shortName || code
+    }
+
     const { data, error } = await sb
       .from('stocks')
       .insert({ code: String(code), name, exchange: 'TSE' })

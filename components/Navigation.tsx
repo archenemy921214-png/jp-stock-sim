@@ -11,8 +11,7 @@ const navItems = [
   { href: '/claude-portfolio', label: 'AI売買', mobileLabel: 'AI売買', icon: '🤖' },
   { href: '/trades', label: '取引履歴', mobileLabel: '取引', icon: '📊' },
   { href: '/performance', label: '成績集計', mobileLabel: '成績', icon: '🏆' },
-  { href: '/simulator', label: 'シミュレーター', mobileLabel: 'シミュ', icon: '🔬' },
-  { href: '/settings', label: '通知設定', mobileLabel: '設定', icon: '🔔' },
+{ href: '/settings', label: '通知設定', mobileLabel: '設定', icon: '🔔' },
 ]
 
 export default function Navigation() {
@@ -45,7 +44,7 @@ export default function Navigation() {
       {/* Desktop top nav */}
       <nav className="hidden sm:flex bg-slate-900 border-b border-slate-700 px-6 py-3 items-center gap-8">
         <span className="text-white font-bold text-lg tracking-tight">
-          JP株シミュレーター
+          JP株トレード
         </span>
         <div className="flex gap-2 flex-1">
           {navItems.map(item => {
@@ -89,7 +88,7 @@ export default function Navigation() {
 
       {/* Mobile top bar */}
       <div className="sm:hidden bg-slate-900 border-b border-slate-700 px-4 py-3 flex items-center justify-between">
-        <span className="text-white font-bold">JP株シミュレーター</span>
+        <span className="text-white font-bold">JP株トレード</span>
         {user ? (
           <button
             onClick={handleLogout}

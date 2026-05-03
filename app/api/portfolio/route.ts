@@ -36,6 +36,7 @@ export async function GET() {
     const positionsValue = enrichedPositions.reduce((s, p) => s + p.current_value, 0)
     const totalValue = Number(portfolio?.cash ?? 1000000) + positionsValue
     const realizedPnl = trades.filter(t => t.trade_type === 'sell').reduce((s, t) => s + Number(t.pnl ?? 0), 0)
+    const initialCapital = Number(portfolio?.initial_capital ?? 1000000)
 
     return NextResponse.json({
       cash: portfolio?.cash ?? 1000000,
@@ -43,7 +44,7 @@ export async function GET() {
       trades,
       totalValue,
       realizedPnl,
-      initialCapital: 1000000,
+      initialCapital,
     })
   } catch (e: any) {
     console.error('[GET /api/portfolio]', e)
@@ -53,14 +54,28 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { action } = await request.json()
+    const body = await request.json()
+    const { action } = body
     const sb = getDb()
 
     if (action === 'reset') {
+      const { data: port } = await sb.from('claude_portfolio').select('initial_capital').eq('id', 1).single()
+      const capital = Number(port?.initial_capital ?? 1000000)
       await sb.from('claude_trades').delete().neq('id', 0)
       await sb.from('claude_positions').delete().neq('id', 0)
-      await sb.from('claude_portfolio').upsert({ id: 1, cash: 1000000 })
-      return NextResponse.json({ success: true, message: 'ポートフォリオをリセットしました' })
+      await sb.from('claude_portfolio').upsert({ id: 1, cash: capital, initial_capital: capital })
+      return NextResponse.json({ success: true })
+    }
+
+    if (action === 'set_capital') {
+      const amount = Number(body.capital)
+      if (!amount || amount < 10000 || amount > 10000000) {
+        return NextResponse.json({ error: '金額は10,000円〜10,000,000円で指定してください' }, { status: 400 })
+      }
+      await sb.from('claude_trades').delete().neq('id', 0)
+      await sb.from('claude_positions').delete().neq('id', 0)
+      await sb.from('claude_portfolio').upsert({ id: 1, cash: amount, initial_capital: amount })
+      return NextResponse.json({ success: true })
     }
 
     return NextResponse.json({ error: '不明なアクション' }, { status: 400 })

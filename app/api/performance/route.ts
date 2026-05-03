@@ -1,5 +1,10 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+import stocksMaster from '@/data/stocks_master.json'
+
+const masterMap: Record<string, string> = Object.fromEntries(
+  (stocksMaster as { code: string; name: string }[]).map(s => [s.code, s.name])
+)
 
 export async function GET() {
   try {
@@ -14,7 +19,7 @@ export async function GET() {
     if (tradesRes.error) throw tradesRes.error
     if (stocksRes.error) throw stocksRes.error
 
-    const stockMap = Object.fromEntries((stocksRes.data ?? []).map(s => [s.code, s.name]))
+    const stockMap = Object.fromEntries((stocksRes.data ?? []).map(s => [s.code, masterMap[s.code] || s.name]))
     const trades = (tradesRes.data ?? []).map(t => ({
       ...t,
       stockName: stockMap[t.stock_code] ?? t.stock_code,

@@ -114,12 +114,16 @@ export default function WatchlistPage() {
           <h1 className="text-2xl font-bold text-white">選定銘柄一覧</h1>
           <p className="text-slate-400 text-sm mt-1">{stocks.length}銘柄を監視中</p>
         </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-        >
-          ＋ 選定銘柄追加
-        </button>
+        {stocks.length < 9 ? (
+          <button
+            onClick={() => setShowModal(true)}
+            className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          >
+            ＋ 選定銘柄追加
+          </button>
+        ) : (
+          <span className="text-slate-500 text-sm">上限（9銘柄）</span>
+        )}
       </div>
 
       {loading ? (

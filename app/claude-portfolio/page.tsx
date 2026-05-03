@@ -22,6 +22,8 @@ function DecisionBadge({ type }: { type: 'buy' | 'sell' }) {
   )
 }
 
+const CAPITAL_OPTIONS = [10000, 50000, 100000, 300000, 500000, 1000000, 3000000, 5000000, 10000000]
+
 export default function ClaudePortfolioPage() {
   const [portfolio, setPortfolio] = useState<ClaudePortfolio | null>(null)
   const [stocks, setStocks] = useState<any[]>([])
@@ -30,6 +32,9 @@ export default function ClaudePortfolioPage() {
   const [analyzeAll, setAnalyzeAll] = useState(false)
   const [lastResult, setLastResult] = useState<any | null>(null)
   const [resetting, setResetting] = useState(false)
+  const [showCapitalModal, setShowCapitalModal] = useState(false)
+  const [capitalInput, setCapitalInput] = useState(1000000)
+  const [settingCapital, setSettingCapital] = useState(false)
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -96,6 +101,24 @@ export default function ClaudePortfolioPage() {
     }
   }
 
+  const handleSetCapital = async () => {
+    setSettingCapital(true)
+    try {
+      const res = await fetch('/api/portfolio', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'set_capital', capital: capitalInput })
+      })
+      const data = await res.json()
+      if (!res.ok) { alert(data.error); return }
+      setShowCapitalModal(false)
+      setLastResult(null)
+      await loadData()
+    } finally {
+      setSettingCapital(false)
+    }
+  }
+
   const totalReturn = portfolio
     ? ((portfolio.totalValue - portfolio.initialCapital) / portfolio.initialCapital) * 100
     : 0
@@ -114,6 +137,12 @@ export default function ClaudePortfolioPage() {
             className="flex-1 sm:flex-none bg-purple-700 hover:bg-purple-600 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
           >
             {analyzeAll ? `分析中 (${analyzing})...` : '全銘柄をAI分析'}
+          </button>
+          <button
+            onClick={() => { setCapitalInput(portfolio?.initialCapital ?? 1000000); setShowCapitalModal(true) }}
+            className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+          >
+            金額変更
           </button>
           <button
             onClick={handleReset}
@@ -359,6 +388,57 @@ export default function ClaudePortfolioPage() {
           <p className="text-4xl mb-4">🤖</p>
           <p className="text-lg font-medium">まだAIの取引はありません</p>
           <p className="text-sm mt-2">銘柄を登録してから「全銘柄をAI分析」を実行してください</p>
+        </div>
+      )}
+
+      {/* 金額変更モーダル */}
+      {showCapitalModal && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-slate-800 rounded-xl border border-slate-600 w-full max-w-sm">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
+              <h2 className="text-white font-semibold">初期資金を変更</h2>
+              <button onClick={() => setShowCapitalModal(false)} className="text-slate-400 hover:text-white text-xl">✕</button>
+            </div>
+            <div className="p-5 space-y-4">
+              <p className="text-slate-400 text-sm">変更すると取引履歴とポジションがリセットされます。</p>
+              <div>
+                <label className="text-slate-300 text-sm block mb-2">
+                  金額: <span className="text-white font-bold">¥{capitalInput.toLocaleString()}</span>
+                </label>
+                <input
+                  type="range"
+                  min={10000}
+                  max={10000000}
+                  step={10000}
+                  value={capitalInput}
+                  onChange={e => setCapitalInput(Number(e.target.value))}
+                  className="w-full accent-blue-500"
+                />
+                <div className="flex justify-between text-xs text-slate-500 mt-1">
+                  <span>¥10,000</span>
+                  <span>¥10,000,000</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {CAPITAL_OPTIONS.map(v => (
+                  <button
+                    key={v}
+                    onClick={() => setCapitalInput(v)}
+                    className={`text-xs py-1.5 rounded-lg transition-colors ${capitalInput === v ? 'bg-blue-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-slate-300'}`}
+                  >
+                    ¥{v.toLocaleString()}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={handleSetCapital}
+                disabled={settingCapital}
+                className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                {settingCapital ? '設定中...' : 'この金額で設定'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
