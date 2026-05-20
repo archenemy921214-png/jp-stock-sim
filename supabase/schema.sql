@@ -1,10 +1,19 @@
--- 銘柄テーブル
+-- 銘柄テーブル（共有キャッシュ）
 CREATE TABLE IF NOT EXISTS stocks (
   id SERIAL PRIMARY KEY,
   code VARCHAR(10) NOT NULL UNIQUE,
   name VARCHAR(200) NOT NULL,
   exchange VARCHAR(20) DEFAULT 'TSE',
   created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ユーザーウォッチリスト（銘柄とユーザーの紐付け）
+CREATE TABLE IF NOT EXISTS user_watchlist (
+  id SERIAL PRIMARY KEY,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  stock_code VARCHAR(10) NOT NULL REFERENCES stocks(code) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(user_id, stock_code)
 );
 
 -- 価格履歴テーブル
@@ -47,9 +56,10 @@ CREATE TABLE IF NOT EXISTS signals (
   UNIQUE(stock_code, date, signal_type)
 );
 
--- 仮想ポジションテーブル
+-- バックテスト仮想ポジション（ユーザー別）
 CREATE TABLE IF NOT EXISTS simulated_positions (
   id SERIAL PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   stock_code VARCHAR(10) NOT NULL REFERENCES stocks(code) ON DELETE CASCADE,
   entry_date DATE NOT NULL,
   entry_price DECIMAL(12,2) NOT NULL,
@@ -60,9 +70,10 @@ CREATE TABLE IF NOT EXISTS simulated_positions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 仮想取引履歴テーブル
+-- バックテスト取引履歴（ユーザー別）
 CREATE TABLE IF NOT EXISTS simulated_trades (
   id SERIAL PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   position_id INTEGER REFERENCES simulated_positions(id) ON DELETE CASCADE,
   stock_code VARCHAR(10) NOT NULL REFERENCES stocks(code) ON DELETE CASCADE,
   entry_date DATE NOT NULL,
@@ -77,16 +88,19 @@ CREATE TABLE IF NOT EXISTS simulated_trades (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Claude仮想ポートフォリオ（シングルトン）
+-- Claude仮想ポートフォリオ（ユーザー別）
 CREATE TABLE IF NOT EXISTS claude_portfolio (
-  id INTEGER PRIMARY KEY CHECK (id = 1),
+  id SERIAL PRIMARY KEY,
+  user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
   cash DECIMAL(15,2) NOT NULL DEFAULT 1000000,
+  initial_capital DECIMAL(15,2) NOT NULL DEFAULT 1000000,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Claude保有ポジション
+-- Claude保有ポジション（ユーザー別）
 CREATE TABLE IF NOT EXISTS claude_positions (
   id SERIAL PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   stock_code VARCHAR(10) NOT NULL REFERENCES stocks(code) ON DELETE CASCADE,
   stock_name VARCHAR(200) NOT NULL,
   entry_date DATE NOT NULL,
@@ -97,9 +111,10 @@ CREATE TABLE IF NOT EXISTS claude_positions (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Claude取引履歴
+-- Claude取引履歴（ユーザー別）
 CREATE TABLE IF NOT EXISTS claude_trades (
   id SERIAL PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   stock_code VARCHAR(10) NOT NULL,
   stock_name VARCHAR(200) NOT NULL,
   trade_type VARCHAR(10) NOT NULL,
@@ -114,7 +129,7 @@ CREATE TABLE IF NOT EXISTS claude_trades (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 通知設定（シングルトン）
+-- 通知設定（グローバル）
 CREATE TABLE IF NOT EXISTS notification_settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   email TEXT NOT NULL DEFAULT '',
@@ -122,13 +137,17 @@ CREATE TABLE IF NOT EXISTS notification_settings (
 );
 
 -- インデックス
+CREATE INDEX IF NOT EXISTS idx_user_watchlist_user ON user_watchlist(user_id);
 CREATE INDEX IF NOT EXISTS idx_price_history_stock_date ON price_history(stock_code, date DESC);
 CREATE INDEX IF NOT EXISTS idx_indicators_stock_date ON indicators(stock_code, date DESC);
 CREATE INDEX IF NOT EXISTS idx_signals_stock_date ON signals(stock_code, date DESC);
-CREATE INDEX IF NOT EXISTS idx_trades_stock ON simulated_trades(stock_code);
-CREATE INDEX IF NOT EXISTS idx_trades_exit_date ON simulated_trades(exit_date DESC);
+CREATE INDEX IF NOT EXISTS idx_simulated_positions_user ON simulated_positions(user_id);
+CREATE INDEX IF NOT EXISTS idx_simulated_trades_user ON simulated_trades(user_id);
+CREATE INDEX IF NOT EXISTS idx_simulated_trades_stock ON simulated_trades(stock_code);
+CREATE INDEX IF NOT EXISTS idx_simulated_trades_exit_date ON simulated_trades(exit_date DESC);
+CREATE INDEX IF NOT EXISTS idx_claude_positions_user ON claude_positions(user_id);
+CREATE INDEX IF NOT EXISTS idx_claude_trades_user ON claude_trades(user_id);
 CREATE INDEX IF NOT EXISTS idx_claude_trades_date ON claude_trades(date DESC);
 
 -- 初期データ
-INSERT INTO claude_portfolio (id, cash) VALUES (1, 1000000) ON CONFLICT (id) DO NOTHING;
 INSERT INTO notification_settings (id, email, enabled) VALUES (1, '', TRUE) ON CONFLICT (id) DO NOTHING;

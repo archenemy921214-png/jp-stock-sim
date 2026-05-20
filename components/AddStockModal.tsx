@@ -23,6 +23,7 @@ export default function AddStockModal({ onClose, onAdded }: Props) {
   const [results, setResults] = useState<{ code: string; name: string }[]>([])
   const [searching, setSearching] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [loadingCode, setLoadingCode] = useState<string | null>(null)
   const [error, setError] = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -48,23 +49,30 @@ export default function AddStockModal({ onClose, onAdded }: Props) {
 
   const handleSubmit = async (stockCode: string, stockName?: string) => {
     setLoading(true)
+    setLoadingCode(stockCode)
     setError('')
     try {
+      console.log('[AddStock] POSTing:', stockCode)
       const addRes = await fetch('/api/stocks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: stockCode, name: stockName })
       })
       const addData = await addRes.json()
-      if (!addRes.ok) throw new Error(addData.error)
+      console.log('[AddStock] response:', addRes.status, addData)
+      if (!addRes.ok) throw new Error(addData.error || `HTTP ${addRes.status}`)
 
+      console.log('[AddStock] refreshing...')
       await fetch(`/api/stocks/${stockCode}/refresh`, { method: 'POST' })
+      console.log('[AddStock] done, closing modal')
       onAdded()
       onClose()
     } catch (e: any) {
-      setError(e.message)
+      console.error('[AddStock] error:', e)
+      setError(e.message || 'エラーが発生しました')
     } finally {
       setLoading(false)
+      setLoadingCode(null)
     }
   }
 
@@ -75,8 +83,13 @@ export default function AddStockModal({ onClose, onAdded }: Props) {
       <div className="bg-slate-800 rounded-xl border border-slate-600 w-full max-w-md">
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
           <h2 className="text-white font-semibold">銘柄を追加</h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white text-xl">✕</button>
+          <button onClick={onClose} disabled={loading} className="text-slate-400 hover:text-white text-xl disabled:opacity-50">✕</button>
         </div>
+        {loading && (
+          <div className="px-5 py-2 bg-blue-900/30 border-b border-blue-800/50">
+            <p className="text-blue-300 text-sm">データ取得中です。しばらくお待ちください...</p>
+          </div>
+        )}
 
         <div className="p-5 space-y-4">
           {error && (
@@ -124,6 +137,7 @@ export default function AddStockModal({ onClose, onAdded }: Props) {
                 >
                   <span className="text-blue-400 font-mono font-bold w-12 shrink-0">{r.code}</span>
                   <span className="text-slate-300 truncate">{r.name}</span>
+                  {loadingCode === r.code && <span className="ml-auto text-slate-400 text-xs">追加中...</span>}
                 </button>
               ))}
             </div>
@@ -141,7 +155,10 @@ export default function AddStockModal({ onClose, onAdded }: Props) {
                     className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded-lg px-3 py-2 text-sm transition-colors text-left"
                   >
                     <span className="text-blue-400 font-mono font-bold">{s.code}</span>
-                    <span className="text-slate-300 truncate">{s.name}</span>
+                    {loadingCode === s.code
+                      ? <span className="text-slate-400 text-xs">追加中...</span>
+                      : <span className="text-slate-300 truncate">{s.name}</span>
+                    }
                   </button>
                 ))}
               </div>

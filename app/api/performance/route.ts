@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+import { getUserId } from '@/lib/auth'
 import stocksMaster from '@/data/stocks_master.json'
 
 const masterMap: Record<string, string> = Object.fromEntries(
@@ -8,11 +9,11 @@ const masterMap: Record<string, string> = Object.fromEntries(
 
 export async function GET() {
   try {
+    const userId = await getUserId()
     const sb = getDb()
 
-    // JOIN不要：個別クエリ＋メモリ結合
     const [tradesRes, stocksRes] = await Promise.all([
-      sb.from('simulated_trades').select('*').order('exit_date', { ascending: true }),
+      sb.from('simulated_trades').select('*').eq('user_id', userId).order('exit_date', { ascending: true }),
       sb.from('stocks').select('code, name'),
     ])
 
@@ -58,6 +59,7 @@ export async function GET() {
       winRate, avgWin, avgLoss, monthly, byStock,
     })
   } catch (e: any) {
+    if (e?.message === 'Unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     console.error('[GET /api/performance]', e)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

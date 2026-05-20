@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { getDb, parseReasons } from '@/lib/db'
+import { getUserId } from '@/lib/auth'
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -14,17 +15,39 @@ export async function POST(
     return NextResponse.json({ error: 'ANTHROPIC_API_KEY が設定されていません' }, { status: 500 })
   }
 
+  let userId: string
+  try {
+    userId = await getUserId()
+  } catch {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const sb = getDb()
 
   const { data: stock } = await sb.from('stocks').select('*').eq('code', code).single()
   if (!stock) return NextResponse.json({ error: '銘柄が見つかりません' }, { status: 404 })
 
+  // ポートフォリオが未作成なら初期化
+  const { data: existingPort } = await sb
+    .from('claude_portfolio')
+    .select('*')
+    .eq('user_id', userId)
+    .single()
+
+  if (!existingPort) {
+    await sb.from('claude_portfolio').insert({
+      user_id: userId,
+      cash: 1000000,
+      initial_capital: 1000000,
+    })
+  }
+
   const [pricesRes, latestIndRes, latestSignalRes, portfolioRes, openPosRes] = await Promise.all([
     sb.from('price_history').select('*').eq('stock_code', code).order('date', { ascending: false }).limit(30),
     sb.from('indicators').select('*').eq('stock_code', code).order('date', { ascending: false }).limit(1).single(),
     sb.from('signals').select('*').eq('stock_code', code).eq('signal_type', 'buy').order('date', { ascending: false }).limit(1).single(),
-    sb.from('claude_portfolio').select('*').eq('id', 1).single(),
-    sb.from('claude_positions').select('*').eq('stock_code', code).eq('status', 'open').limit(1).single(),
+    sb.from('claude_portfolio').select('*').eq('user_id', userId).single(),
+    sb.from('claude_positions').select('*').eq('stock_code', code).eq('user_id', userId).eq('status', 'open').limit(1).single(),
   ])
 
   const prices = pricesRes.data ?? []
@@ -104,17 +127,19 @@ ${signalReasons.length > 0 ? signalReasons.map(r => `- ${r}`).join('\n') : '- �
       const cost = latestPrice * decision.quantity
       if (cash >= cost) {
         await sb.from('claude_positions').insert({
+          user_id: userId,
           stock_code: code, stock_name: stock.name,
           entry_date: today, entry_price: latestPrice,
           quantity: decision.quantity, claude_reasoning: decision.reasoning,
         })
         await sb.from('claude_trades').insert({
+          user_id: userId,
           stock_code: code, stock_name: stock.name, trade_type: 'buy',
           date: today, price: latestPrice, quantity: decision.quantity,
           amount: -cost, cash_before: cash, cash_after: cash - cost,
           claude_reasoning: decision.reasoning,
         })
-        await sb.from('claude_portfolio').update({ cash: cash - cost }).eq('id', 1)
+        await sb.from('claude_portfolio').update({ cash: cash - cost }).eq('user_id', userId)
       } else {
         decision.reasoning = `（資金不足のため見送り）${decision.reasoning}`
         decision.decision = 'hold'
@@ -122,14 +147,15 @@ ${signalReasons.length > 0 ? signalReasons.map(r => `- ${r}`).join('\n') : '- �
     } else if (decision.decision === 'sell' && openPos) {
       const proceeds = latestPrice * openPos.quantity
       const pnl = (latestPrice - Number(openPos.entry_price)) * openPos.quantity
-      await sb.from('claude_positions').update({ status: 'closed' }).eq('id', openPos.id)
+      await sb.from('claude_positions').update({ status: 'closed' }).eq('id', openPos.id).eq('user_id', userId)
       await sb.from('claude_trades').insert({
+        user_id: userId,
         stock_code: code, stock_name: stock.name, trade_type: 'sell',
         date: today, price: latestPrice, quantity: openPos.quantity,
         amount: proceeds, cash_before: cash, cash_after: cash + proceeds, pnl,
         claude_reasoning: decision.reasoning,
       })
-      await sb.from('claude_portfolio').update({ cash: cash + proceeds }).eq('id', 1)
+      await sb.from('claude_portfolio').update({ cash: cash + proceeds }).eq('user_id', userId)
     }
 
     return NextResponse.json({ ...decision, stock_code: code, stock_name: stock.name, latest_price: latestPrice })

@@ -1,17 +1,20 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+import { getUserId } from '@/lib/auth'
 
 export async function GET(request: Request) {
   try {
+    const userId = await getUserId()
     const { searchParams } = new URL(request.url)
     const code = searchParams.get('code')
     const sb = getDb()
 
-    // JOIN不要：個別クエリ＋メモリ結合
+    const tradesQuery = code
+      ? sb.from('simulated_trades').select('*').eq('stock_code', code).eq('user_id', userId).order('exit_date', { ascending: false })
+      : sb.from('simulated_trades').select('*').eq('user_id', userId).order('exit_date', { ascending: false })
+
     const [tradesRes, stocksRes] = await Promise.all([
-      code
-        ? sb.from('simulated_trades').select('*').eq('stock_code', code).order('exit_date', { ascending: false })
-        : sb.from('simulated_trades').select('*').order('exit_date', { ascending: false }),
+      tradesQuery,
       sb.from('stocks').select('code, name'),
     ])
 
@@ -26,6 +29,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(trades)
   } catch (e: any) {
+    if (e?.message === 'Unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     console.error('[GET /api/trades]', e)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }

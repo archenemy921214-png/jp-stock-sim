@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+import { getUserId } from '@/lib/auth'
 import { yf } from '@/lib/yahoo'
 import { calculateIndicators } from '@/lib/indicators'
 import { calculateBuySignal } from '@/lib/signals'
@@ -10,7 +11,7 @@ export async function POST(
   _req: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
-  const { code } = await params
+  const [{ code }, userId] = await Promise.all([params, getUserId()])
   const ticker = `${code}.T`
 
   try {
@@ -80,12 +81,13 @@ export async function POST(
 
     const { trades, openPosition } = runSimulation(priceHistory, sortedInd)
 
-    await sb.from('simulated_trades').delete().eq('stock_code', code)
-    await sb.from('simulated_positions').delete().eq('stock_code', code)
+    await sb.from('simulated_trades').delete().eq('stock_code', code).eq('user_id', userId)
+    await sb.from('simulated_positions').delete().eq('stock_code', code).eq('user_id', userId)
 
     for (const trade of trades) {
       const { data: posData } = await sb.from('simulated_positions').insert({
         stock_code: code,
+        user_id: userId,
         entry_date: trade.entryDate,
         entry_price: trade.entryPrice,
         quantity: trade.quantity,
@@ -97,6 +99,7 @@ export async function POST(
       await sb.from('simulated_trades').insert({
         position_id: posData?.id ?? null,
         stock_code: code,
+        user_id: userId,
         entry_date: trade.entryDate,
         entry_price: trade.entryPrice,
         exit_date: trade.exitDate,
@@ -112,6 +115,7 @@ export async function POST(
     if (openPosition) {
       await sb.from('simulated_positions').insert({
         stock_code: code,
+        user_id: userId,
         entry_date: openPosition.entryDate,
         entry_price: openPosition.entryPrice,
         quantity: openPosition.quantity,
@@ -128,7 +132,8 @@ export async function POST(
       hasOpenPosition: !!openPosition,
     })
   } catch (e: any) {
-    console.error('[refresh]', code, e)
+    if (e?.message === 'Unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    console.error('[refresh]', e)
     return NextResponse.json({ error: e.message || 'データ取得に失敗しました' }, { status: 500 })
   }
 }

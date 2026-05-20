@@ -1,14 +1,31 @@
 import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
+import { getUserId } from '@/lib/auth'
 
 export async function GET() {
   try {
+    const userId = await getUserId()
     const sb = getDb()
 
+    // ポートフォリオが未作成なら初期化
+    const { data: existing } = await sb
+      .from('claude_portfolio')
+      .select('*')
+      .eq('user_id', userId)
+      .single()
+
+    if (!existing) {
+      await sb.from('claude_portfolio').insert({
+        user_id: userId,
+        cash: 1000000,
+        initial_capital: 1000000,
+      })
+    }
+
     const [portRes, posRes, tradesRes] = await Promise.all([
-      sb.from('claude_portfolio').select('*').eq('id', 1).single(),
-      sb.from('claude_positions').select('*').eq('status', 'open').order('entry_date', { ascending: true }),
-      sb.from('claude_trades').select('*').order('date', { ascending: false }).limit(100),
+      sb.from('claude_portfolio').select('*').eq('user_id', userId).single(),
+      sb.from('claude_positions').select('*').eq('user_id', userId).eq('status', 'open').order('entry_date', { ascending: true }),
+      sb.from('claude_trades').select('*').eq('user_id', userId).order('date', { ascending: false }).limit(100),
     ])
 
     if (portRes.error && portRes.error.code !== 'PGRST116') throw portRes.error
@@ -47,6 +64,7 @@ export async function GET() {
       initialCapital,
     })
   } catch (e: any) {
+    if (e?.message === 'Unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     console.error('[GET /api/portfolio]', e)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
@@ -54,16 +72,20 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const userId = await getUserId()
     const body = await request.json()
     const { action } = body
     const sb = getDb()
 
     if (action === 'reset') {
-      const { data: port } = await sb.from('claude_portfolio').select('initial_capital').eq('id', 1).single()
+      const { data: port } = await sb.from('claude_portfolio').select('initial_capital').eq('user_id', userId).single()
       const capital = Number(port?.initial_capital ?? 1000000)
-      await sb.from('claude_trades').delete().neq('id', 0)
-      await sb.from('claude_positions').delete().neq('id', 0)
-      await sb.from('claude_portfolio').upsert({ id: 1, cash: capital, initial_capital: capital })
+      await sb.from('claude_trades').delete().eq('user_id', userId)
+      await sb.from('claude_positions').delete().eq('user_id', userId)
+      await sb.from('claude_portfolio').upsert(
+        { user_id: userId, cash: capital, initial_capital: capital },
+        { onConflict: 'user_id' }
+      )
       return NextResponse.json({ success: true })
     }
 
@@ -72,14 +94,18 @@ export async function POST(request: Request) {
       if (!amount || amount < 10000 || amount > 10000000) {
         return NextResponse.json({ error: '金額は10,000円〜10,000,000円で指定してください' }, { status: 400 })
       }
-      await sb.from('claude_trades').delete().neq('id', 0)
-      await sb.from('claude_positions').delete().neq('id', 0)
-      await sb.from('claude_portfolio').upsert({ id: 1, cash: amount, initial_capital: amount })
+      await sb.from('claude_trades').delete().eq('user_id', userId)
+      await sb.from('claude_positions').delete().eq('user_id', userId)
+      await sb.from('claude_portfolio').upsert(
+        { user_id: userId, cash: amount, initial_capital: amount },
+        { onConflict: 'user_id' }
+      )
       return NextResponse.json({ success: true })
     }
 
     return NextResponse.json({ error: '不明なアクション' }, { status: 400 })
   } catch (e: any) {
+    if (e?.message === 'Unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     console.error('[POST /api/portfolio]', e)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
