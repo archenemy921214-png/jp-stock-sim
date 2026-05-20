@@ -37,3 +37,13 @@ CREATE INDEX IF NOT EXISTS idx_claude_positions_user ON claude_positions(user_id
 -- 6. claude_trades に user_id 追加
 ALTER TABLE claude_trades ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
 CREATE INDEX IF NOT EXISTS idx_claude_trades_user ON claude_trades(user_id);
+
+-- 7. notification_settings をユーザー別に再作成
+DROP TABLE IF EXISTS notification_settings CASCADE;
+CREATE TABLE notification_settings (
+  id SERIAL PRIMARY KEY,
+  user_id UUID UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL DEFAULT '',
+  enabled BOOLEAN NOT NULL DEFAULT TRUE
+);
+CREATE INDEX IF NOT EXISTS idx_notification_settings_user ON notification_settings(user_id);
