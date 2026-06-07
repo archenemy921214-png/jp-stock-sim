@@ -34,3 +34,18 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
+
+export async function DELETE() {
+  try {
+    const userId = await getUserId()
+    const sb = getDb()
+    await Promise.all([
+      sb.from('simulated_trades').delete().eq('user_id', userId),
+      sb.from('simulated_positions').delete().eq('user_id', userId),
+    ])
+    return NextResponse.json({ success: true })
+  } catch (e: any) {
+    if (e?.message === 'Unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
+}

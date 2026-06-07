@@ -1,7 +1,11 @@
 {
-"crons": [
+  "crons": [
     {
       "path": "/api/notify/claude-signals",
+      "schedule": "0 0 * * 1-5"
+    },
+    {
+      "path": "/api/cron/daily-pick",
       "schedule": "0 0 * * 1-5"
     }
   ]

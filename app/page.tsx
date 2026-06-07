@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import AddStockModal from '@/components/AddStockModal'
+import DailyPick from '@/components/DailyPick'
 import type { Stock, SimulatedPosition, SimulatedTrade } from '@/types'
 
 interface StockItem extends Stock {
@@ -103,12 +104,19 @@ export default function WatchlistPage() {
 
   const handleDelete = async (code: string) => {
     if (!confirm(`${code} を削除しますか？`)) return
-    await fetch(`/api/stocks/${code}`, { method: 'DELETE' })
+    const res = await fetch(`/api/stocks/${code}`, { method: 'DELETE' })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      alert(`削除に失敗しました: ${body.error ?? res.status}`)
+      return
+    }
     setStocks(prev => prev.filter(s => s.code !== code))
   }
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6">
+      <DailyPick />
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-white">選定銘柄一覧</h1>

@@ -8,9 +8,12 @@ import { runSimulation } from '@/lib/simulation'
 import type { PriceHistory, Indicator } from '@/types'
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ code: string }> }
 ) {
+  const { searchParams } = new URL(req.url)
+  const runSim = searchParams.get('sim') === 'true'
+
   const [{ code }, userId] = await Promise.all([params, getUserId()])
   const ticker = `${code}.T`
 
@@ -79,57 +82,66 @@ export async function POST(
       await sb.from('signals').upsert(signalRows, { onConflict: 'stock_code,date,signal_type' })
     }
 
-    const { trades, openPosition } = runSimulation(priceHistory, sortedInd)
+    // シミュレーションは ?sim=true のときのみ再実行
+    let tradeCount = 0
+    let hasOpenPosition = false
 
-    await sb.from('simulated_trades').delete().eq('stock_code', code).eq('user_id', userId)
-    await sb.from('simulated_positions').delete().eq('stock_code', code).eq('user_id', userId)
+    if (runSim) {
+      const { trades, openPosition } = runSimulation(priceHistory, sortedInd)
 
-    for (const trade of trades) {
-      const { data: posData } = await sb.from('simulated_positions').insert({
-        stock_code: code,
-        user_id: userId,
-        entry_date: trade.entryDate,
-        entry_price: trade.entryPrice,
-        quantity: trade.quantity,
-        status: 'closed',
-        signal_score: trade.signalScore,
-        signal_reasons: trade.signalReasons,
-      }).select('id').single()
+      await sb.from('simulated_trades').delete().eq('stock_code', code).eq('user_id', userId)
+      await sb.from('simulated_positions').delete().eq('stock_code', code).eq('user_id', userId)
 
-      await sb.from('simulated_trades').insert({
-        position_id: posData?.id ?? null,
-        stock_code: code,
-        user_id: userId,
-        entry_date: trade.entryDate,
-        entry_price: trade.entryPrice,
-        exit_date: trade.exitDate,
-        exit_price: trade.exitPrice,
-        quantity: trade.quantity,
-        pnl: trade.pnl,
-        exit_reason: trade.exitReason,
-        signal_score: trade.signalScore,
-        signal_reasons: trade.signalReasons,
-      })
-    }
+      for (const trade of trades) {
+        const { data: posData } = await sb.from('simulated_positions').insert({
+          stock_code: code,
+          user_id: userId,
+          entry_date: trade.entryDate,
+          entry_price: trade.entryPrice,
+          quantity: trade.quantity,
+          status: 'closed',
+          signal_score: trade.signalScore,
+          signal_reasons: trade.signalReasons,
+        }).select('id').single()
 
-    if (openPosition) {
-      await sb.from('simulated_positions').insert({
-        stock_code: code,
-        user_id: userId,
-        entry_date: openPosition.entryDate,
-        entry_price: openPosition.entryPrice,
-        quantity: openPosition.quantity,
-        status: 'open',
-        signal_score: openPosition.signalScore,
-        signal_reasons: openPosition.signalReasons,
-      })
+        await sb.from('simulated_trades').insert({
+          position_id: posData?.id ?? null,
+          stock_code: code,
+          user_id: userId,
+          entry_date: trade.entryDate,
+          entry_price: trade.entryPrice,
+          exit_date: trade.exitDate,
+          exit_price: trade.exitPrice,
+          quantity: trade.quantity,
+          pnl: trade.pnl,
+          exit_reason: trade.exitReason,
+          signal_score: trade.signalScore,
+          signal_reasons: trade.signalReasons,
+        })
+      }
+
+      if (openPosition) {
+        await sb.from('simulated_positions').insert({
+          stock_code: code,
+          user_id: userId,
+          entry_date: openPosition.entryDate,
+          entry_price: openPosition.entryPrice,
+          quantity: openPosition.quantity,
+          status: 'open',
+          signal_score: openPosition.signalScore,
+          signal_reasons: openPosition.signalReasons,
+        })
+      }
+
+      tradeCount = trades.length
+      hasOpenPosition = !!openPosition
     }
 
     return NextResponse.json({
       success: true,
       priceCount: priceRows.length,
-      tradeCount: trades.length,
-      hasOpenPosition: !!openPosition,
+      tradeCount,
+      hasOpenPosition,
     })
   } catch (e: any) {
     if (e?.message === 'Unauthorized') return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -12,14 +12,29 @@ export default function TradesPage() {
   const [trades, setTrades] = useState<TradeWithStock[]>([])
   const [loading, setLoading] = useState(true)
   const [filterCode, setFilterCode] = useState('')
+  const [resetting, setResetting] = useState(false)
 
-  useEffect(() => {
+  const loadTrades = () => {
     setLoading(true)
     fetch('/api/trades')
       .then(r => r.json())
       .then(data => setTrades(Array.isArray(data) ? data : []))
       .finally(() => setLoading(false))
-  }, [])
+  }
+
+  useEffect(() => { loadTrades() }, [])
+
+  const handleReset = async () => {
+    if (!confirm('シミュレーション成績をすべて削除しますか？\n（価格データ・指標は残ります）')) return
+    setResetting(true)
+    try {
+      await fetch('/api/trades', { method: 'DELETE' })
+      setTrades([])
+      setFilterCode('')
+    } finally {
+      setResetting(false)
+    }
+  }
 
   const codes = [...new Set(trades.map(t => t.stock_code))].sort()
   const filtered = filterCode ? trades.filter(t => t.stock_code === filterCode) : trades
@@ -33,9 +48,13 @@ export default function TradesPage() {
     <div className="max-w-6xl mx-auto px-4 py-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-white">取引履歴</h1>
-        <Link href="/performance" className="text-blue-400 hover:text-blue-300 text-sm">
-          成績集計 →
-        </Link>
+        <button
+          onClick={handleReset}
+          disabled={resetting || trades.length === 0}
+          className="bg-red-900/40 hover:bg-red-800/60 disabled:opacity-40 text-red-400 text-sm px-3 py-1.5 rounded-lg transition-colors"
+        >
+          {resetting ? '削除中...' : '成績リセット'}
+        </button>
       </div>
 
       {/* サマリー */}

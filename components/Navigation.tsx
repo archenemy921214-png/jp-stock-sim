@@ -10,8 +10,7 @@ const navItems = [
   { href: '/', label: '銘柄', mobileLabel: '銘柄', icon: '📋' },
   { href: '/claude-portfolio', label: 'AI売買', mobileLabel: 'AI売買', icon: '🤖' },
   { href: '/trades', label: '取引履歴', mobileLabel: '取引', icon: '📊' },
-  { href: '/performance', label: '成績集計', mobileLabel: '成績', icon: '🏆' },
-{ href: '/settings', label: '通知設定', mobileLabel: '設定', icon: '🔔' },
+  { href: '/settings', label: '通知設定', mobileLabel: '設定', icon: '🔔' },
 ]
 
 export default function Navigation() {
