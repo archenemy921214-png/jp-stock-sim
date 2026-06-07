@@ -190,9 +190,15 @@ export default function ClaudePortfolioPage() {
             <div className="space-y-2">
               {lastResult.batch.map((r: any, i: number) => (
                 <div key={i} className="flex items-start gap-3 text-sm border-b border-slate-700 pb-2 last:border-0 last:pb-0">
-                  <span className="font-mono font-bold text-blue-400 w-16 shrink-0">{r.stock_code}</span>
-                  <DecisionBadge type={r.decision === 'hold' ? 'buy' : r.decision} />
-                  <span className={`text-xs font-medium shrink-0 ${r.decision === 'buy' ? 'text-green-400' : r.decision === 'sell' ? 'text-red-400' : 'text-slate-400'}`}>
+                  <div className="shrink-0 w-36">
+                    <span className="font-mono font-bold text-blue-400">{r.stock_code}</span>
+                    <span className="text-slate-400 text-xs ml-1">{r.stock_name}</span>
+                  </div>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                    r.decision === 'buy' ? 'bg-green-900/50 text-green-400' :
+                    r.decision === 'sell' ? 'bg-red-900/50 text-red-400' :
+                    'bg-slate-700 text-slate-400'
+                  }`}>
                     {r.decision === 'buy' ? '買い' : r.decision === 'sell' ? '売り' : '様子見'}
                   </span>
                   <span className="text-slate-300 text-xs leading-relaxed">{r.reasoning}</span>
@@ -200,9 +206,13 @@ export default function ClaudePortfolioPage() {
               ))}
             </div>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-2">
               <div className="flex items-center gap-3 flex-wrap">
-                <span className="font-mono font-bold text-blue-400">{lastResult.stock_code}</span>
+                <span className="font-mono font-bold text-blue-400 text-lg">{lastResult.stock_code}</span>
+                <span className="text-white font-medium">{lastResult.stock_name}</span>
+                {lastResult.latest_price && (
+                  <span className="text-slate-400 text-sm">¥{Number(lastResult.latest_price).toLocaleString()}</span>
+                )}
                 <span className={`text-sm font-bold px-2 py-0.5 rounded-full ${
                   lastResult.decision === 'buy' ? 'bg-green-900/50 text-green-400' :
                   lastResult.decision === 'sell' ? 'bg-red-900/50 text-red-400' :
@@ -212,7 +222,7 @@ export default function ClaudePortfolioPage() {
                 </span>
                 <span className="text-slate-400 text-sm">確信度: {lastResult.confidence}%</span>
               </div>
-              <p className="text-slate-300 text-sm">{lastResult.reasoning}</p>
+              <p className="text-slate-300 text-sm leading-relaxed">{lastResult.reasoning}</p>
             </div>
           )}
         </div>
