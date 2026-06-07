@@ -65,7 +65,7 @@ export async function GET(request: Request) {
         ${candidates.map(c => `
           <div style="margin:16px 0;padding:12px;border:1px solid #e2e8f0;border-radius:8px;">
             <strong>${c.name}（${c.code}）</strong>
-            <span style="margin-left:8px;color:#7c3aed;">スコア: ${c.score}/100</span>
+            <span style="margin-left:8px;color:#7c3aed;">スコア: ${c.score}/120</span>
             <ul style="margin:8px 0;padding-left:20px;color:#475569;">
               ${c.reasons.map(r => `<li>${r}</li>`).join('')}
             </ul>

@@ -40,9 +40,27 @@ CREATE TABLE IF NOT EXISTS indicators (
   ma75 DECIMAL(12,2),
   vol5avg DECIMAL(20,2),
   high20 DECIMAL(12,2),
+  rsi14 DECIMAL(6,2),
+  macd_line DECIMAL(12,4),
+  macd_signal DECIMAL(12,4),
+  macd_hist DECIMAL(12,4),
+  bb_upper DECIMAL(12,2),
+  bb_middle DECIMAL(12,2),
+  bb_lower DECIMAL(12,2),
+  atr14 DECIMAL(12,2),
   created_at TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(stock_code, date)
 );
+
+-- indicators v2 マイグレーション（既存DBに対して実行）
+-- ALTER TABLE indicators ADD COLUMN IF NOT EXISTS rsi14 DECIMAL(6,2);
+-- ALTER TABLE indicators ADD COLUMN IF NOT EXISTS macd_line DECIMAL(12,4);
+-- ALTER TABLE indicators ADD COLUMN IF NOT EXISTS macd_signal DECIMAL(12,4);
+-- ALTER TABLE indicators ADD COLUMN IF NOT EXISTS macd_hist DECIMAL(12,4);
+-- ALTER TABLE indicators ADD COLUMN IF NOT EXISTS bb_upper DECIMAL(12,2);
+-- ALTER TABLE indicators ADD COLUMN IF NOT EXISTS bb_middle DECIMAL(12,2);
+-- ALTER TABLE indicators ADD COLUMN IF NOT EXISTS bb_lower DECIMAL(12,2);
+-- ALTER TABLE indicators ADD COLUMN IF NOT EXISTS atr14 DECIMAL(12,2);
 
 -- シグナルテーブル
 CREATE TABLE IF NOT EXISTS signals (

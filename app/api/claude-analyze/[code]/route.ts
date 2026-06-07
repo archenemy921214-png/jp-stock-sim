@@ -67,6 +67,28 @@ export async function POST(
   const maxQuantity = latestPrice > 0 ? Math.floor(maxInvestment / latestPrice / 100) * 100 : 0
   const suggestedQty = Math.max(100, Math.min(maxQuantity, 1000))
 
+  const rsi = latestInd?.rsi14 != null ? Number(latestInd.rsi14) : null
+  const macdLine = latestInd?.macd_line != null ? Number(latestInd.macd_line) : null
+  const macdSig = latestInd?.macd_signal != null ? Number(latestInd.macd_signal) : null
+  const macdHist = latestInd?.macd_hist != null ? Number(latestInd.macd_hist) : null
+  const bbUpper = latestInd?.bb_upper != null ? Number(latestInd.bb_upper) : null
+  const bbMiddle = latestInd?.bb_middle != null ? Number(latestInd.bb_middle) : null
+  const bbLower = latestInd?.bb_lower != null ? Number(latestInd.bb_lower) : null
+  const atr14 = latestInd?.atr14 != null ? Number(latestInd.atr14) : null
+
+  const rsiStr = rsi !== null
+    ? `${rsi.toFixed(1)}${rsi > 70 ? '（過熱圏）' : rsi < 35 ? '（売られすぎ）' : '（適正）'}`
+    : 'N/A'
+  const macdStr = macdLine !== null && macdSig !== null
+    ? `MACD=${macdLine.toFixed(2)} / シグナル=${macdSig.toFixed(2)} / ヒスト=${macdHist?.toFixed(2) ?? 'N/A'} → ${macdLine > macdSig ? '強気（MACDがシグナル上方）' : '弱気（MACDがシグナル下方）'}`
+    : 'N/A'
+  const bbStr = bbUpper !== null && bbMiddle !== null && bbLower !== null
+    ? `上限¥${Math.round(bbUpper).toLocaleString()} / 中心¥${Math.round(bbMiddle).toLocaleString()} / 下限¥${Math.round(bbLower).toLocaleString()} → 現在価格はBB${latestPrice > bbMiddle ? '上半分（強気ゾーン）' : '下半分（弱気ゾーン）'}`
+    : 'N/A'
+  const atrStr = atr14 !== null
+    ? `¥${atr14.toLocaleString()}（${((atr14 / latestPrice) * 100).toFixed(2)}%）`
+    : 'N/A'
+
   const prompt = `あなたは日本株の投資判断を行うAIトレーダーです。以下のデータを分析して、投資判断を行ってください。
 
 【銘柄情報】
@@ -81,11 +103,14 @@ ${priceTable}
 5日移動平均: ${latestInd?.ma5 ? `¥${Math.round(Number(latestInd.ma5)).toLocaleString()}` : 'N/A'}
 25日移動平均: ${latestInd?.ma25 ? `¥${Math.round(Number(latestInd.ma25)).toLocaleString()}` : 'N/A'}
 75日移動平均: ${latestInd?.ma75 ? `¥${Math.round(Number(latestInd.ma75)).toLocaleString()}` : 'N/A'}
-5日出来高平均: ${latestInd?.vol5avg ? Math.round(Number(latestInd.vol5avg)).toLocaleString() : 'N/A'}
 直近20日高値: ${latestInd?.high20 ? `¥${Math.round(Number(latestInd.high20)).toLocaleString()}` : 'N/A'}
+RSI(14): ${rsiStr}
+MACD(12,26,9): ${macdStr}
+ボリンジャーバンド(20,2σ): ${bbStr}
+ATR(14)日次ボラティリティ: ${atrStr}
 
 【ルールベースシグナル】
-スコア: ${latestSignal?.score ?? 0}/100点（80点以上が買いシグナル）
+スコア: ${latestSignal?.score ?? 0}/120点（85点以上が買いシグナル）
 判定根拠:
 ${signalReasons.length > 0 ? signalReasons.map(r => `- ${r}`).join('\n') : '- データなし'}
 
@@ -98,10 +123,14 @@ ${signalReasons.length > 0 ? signalReasons.map(r => `- ${r}`).join('\n') : '- �
 - 買いの場合の推奨株数: ${suggestedQty}株（最大投資額¥${maxInvestment.toLocaleString()}の範囲内）
 - 損切り基準: -3%で売却
 - 利確基準: +6%で売却
+- RSI>78は過熱売り、MACDデッドクロスは売りシグナル
 - 同一銘柄は1ポジションのみ
 
+【判断の重みづけ】
+RSIとMACDの一致を重視してください。RSIが適正範囲(40-68)でMACDが強気の場合は買い寄りに、RSI過熱またはMACDが弱気に転じた場合は売り/hold寄りに判断してください。
+
 必ず以下のJSON形式のみで回答してください（他の説明文は不要）:
-{"decision":"buy"|"sell"|"hold","confidence":0〜100の整数,"quantity":${suggestedQty}（買いの場合）または${openPos?.quantity ?? 0}（売りの場合）または0（holdの場合）,"reasoning":"判断理由（日本語200字以内）"}`
+{"decision":"buy"|"sell"|"hold","confidence":0〜100の整数,"quantity":${suggestedQty}（買いの場合）または${openPos?.quantity ?? 0}（売りの場合）または0（holdの場合）,"reasoning":"判断理由（日本語200字以内、RSI・MACDの根拠を含める）"}`
 
   try {
     const message = await client.messages.create({

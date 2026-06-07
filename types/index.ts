@@ -26,6 +26,14 @@ export interface Indicator {
   ma75: number | null
   vol5avg: number | null
   high20: number | null
+  rsi14: number | null
+  macd_line: number | null
+  macd_signal: number | null
+  macd_hist: number | null
+  bb_upper: number | null
+  bb_middle: number | null
+  bb_lower: number | null
+  atr14: number | null
 }
 
 export interface Signal {

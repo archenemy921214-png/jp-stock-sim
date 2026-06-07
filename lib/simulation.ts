@@ -38,11 +38,12 @@ export function runSimulation(
     const current = sorted[i]
     const ind = indByDate.get(current.date)
     if (!ind) continue
+    const prevInd = sortedInd[sortedInd.findIndex(x => x.date === current.date) - 1] ?? null
 
     // 売り判定（ポジションがある場合）
     if (openPos) {
       const holdingDays = i - openPos.entryIndex
-      const sell = checkSellCondition(current, ind, openPos.entryPrice, holdingDays)
+      const sell = checkSellCondition(current, ind, openPos.entryPrice, holdingDays, prevInd)
 
       if (sell.shouldSell) {
         trades.push({
